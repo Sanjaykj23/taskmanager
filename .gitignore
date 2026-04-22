@@ -1,3 +1,8 @@
-./config
-./env
-./node_modules
+# Dependency folder
+/node_modules
+
+# Environment variables
+.env
+
+# Config files (optional, depends on your project)
+#/config
