@@ -30,4 +30,3 @@ const port = process.env.PORT || 30000;
 app.listen(port, () => {
     console.log("Server listenning on port : ", process.env.PORT);
 });
-

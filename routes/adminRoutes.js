@@ -1,7 +1,8 @@
 import exp from 'express';
 import dotenv from 'dotenv';
-import db from '../config/dataBase.js';
+import superbase from '../config/dataBase.js';
 import authenticate from '../middlewares/authmiddleware.js'
+
 
 const router = exp.Router();
 const isAdmin = (req, res, next) => {
@@ -11,54 +12,83 @@ const isAdmin = (req, res, next) => {
     next();
 }
 
-router.post("/createproject", authenticate, isAdmin, async (req, res) => {
-    const { project_name, project_desc, adminID, leadID } = req.body;
+router.post("/create-project", authenticate, isAdmin, async (req, res) => {
+    const { project_name, project_desc, adminID } = req.body;
     try {
-        const isLead = await db.query("SELECT role  FROM users WHERE id=$1", [leadID]);
-        if (isLead.rows.length == 0 || isLead.rows[0].role != 'team_lead') {
-            res.status(400).json({ err: "Invalid Lead ID" });
-        }
-        const newProject = await db.query("INSERT INTO projects (project_name,project_description,lead_id,admin_id) VALUES ($1,$2,$3,$4)", [project_name, project_desc, leadID, adminID]); 4
+        const { data, error } = await superbase.from("projects").insert([{
+            project_name,
+            project_deecription: project_desc,
+            lead_id: lead,
+            admin_id: req.userData.id
+        }]);
     } catch (err) {
         res.status(400).json({ eror: err });
     }
+    res.status(200).json({ message: "Project Created ", data });
 });
 
-router.post("/addmembers", authenticate, isAdmin, async (req, res) => {
+router.post("/add-members", authenticate, isAdmin, async (req, res) => {
     const { project_id, member_id, role } = req.body;
-    const isUser = await db.query("SELECT role FROM users WHERE id=$1", [member_id]);
-    if (isUser.rows.length == 0 || isUser.rows[0].role != 'user') {
-        res.status(400).json({ err: "Invalid User ID" });
+    if (!project_id || !member_id || !role) {
+        res.status(200).json({ error: "Enter all fields" });
     }
-    const project = await db.query("SELECT * FROM projects WHERE id=$1", [project_id]);
-    if (project.rows.length == 0 || project.rows[0].is_completed == true) {
-        res.status(400).json({ error: "Invalid Project ID " });
+    const { data: isMember } = await superbase.from("profiles").select("id", "gmail").eq('id', project_id).single();
+    if (!isMember) {
+        res.status(400).json({ err: "Wrong Member ID" });
     }
-    const lead = await ("SELECT lead_id FROM projects WHERE project_id=$1", [project_id]);
-    await db.query(
-        "INSERT INTO project_members (project_id, lead_id,user_id,role) VALUES ($1, $2,$3,$4)",
-        [project_id, lead, member_id, role]
-    );
+    const { data: emailVerified } = await superbase.from("auth.user").select("email", "email_confirmed_at").eq("email", isMember.gmail).single();
+    if (!emailVerified) {
+        res.status(400).json({ err: "Email Not Verified" });
+    }
+    const { data: isProject } = await superbase.from("projects", "lead_id").select("id").eq('id', project_id).single();
+    if (!isProject) {
+        res.status(400).json({ err: "Wrong Project ID" });
+    }
+
+    const { error } = await supabase.from('project_members').insert([{ project_id, lead_id: isProject.lead_id, user_id: member_id, role: role }]);
+
+    if (error) {
+        res.send(400).json({ err: "Could NOt add the user" });
+    }
+
     res.status(200).json({ message: "Member Added" });
 });
 
-router.post("/removeuser", authenticate, isAdmin, async (req, res) => {
-    const { projectId, member_id } = req.body;
-    const isUser = await db.query("SELECT role FROM users WHERE id=$1", [member_id]);
-    if (isUser.rows.length == 0 || isUser.rows[0].role != 'user') {
-        res.status(400).json({ err: "Invalid User ID" });
+router.post("/remove-member", authenticate, isAdmin, async (req, res) => {
+    const { project_id, member_id } = req.body;
+    if (!project_id || !member_id) {
+        res.status(200).json({ error: "Enter all fields" });
     }
-    const project = await db.query("SELECT * FROM projects WHERE id=$1", [project_id]);
-    if (project.rows.length == 0 || project.rows[0].is_completed == true) {
-        res.status(400).json({ error: "Invalid Project ID " });
+
+    const { data: isProject } = await superbase.from("projects", "lead_id").select("id").eq('id', project_id).single();
+    if (!isProject) {
+        res.status(400).json({ err: "Wrong Project ID" });
     }
-    await db.query("DELETE FROM project_members WHERE user_id=$1", [member_id]);
+
+    const { error } = await supabase.from('project_members').delete().match({ project_id, user_id: member_id });
+
+    if (error) {
+        res.send(400).json({ err: "Could NOt remmove the user" });
+    }
     res.status(200).json({ message: "User deleted From the Project" });
 });
 
-router.patch("/task/complete/:taskId", authenticate, async (req, res) => {
-    const result = await db.query("UPDATE TASK SET status= 'completed' WHERE id=$1 AND assigned_to=$2", [req.params.taskId, req.userData.id]);
-    res.status(200).json({ message: "Task Status Updated" });
+router.post("/assign-task", async (req, res) => {
+    const { project_id, member_id, task, assigned_to } = req.body;
+    const { data: project } = await superbase.from("project").select("lead_id").eq('id', project_id).single();
+    if (project.lead_id !== req.userData.id) {
+        return res.status(403).json({ error: "You are not the lead for this project." });
+    }
+    const { data: member } = await superbase.from("project_members").select("project_id").eq("user_id", member_id).single();
+    if (member.project_id !== project_id) {
+        return res.status(403).json({ error: "Wrong user ID" });
+    }
+    const { data, error } = await supabase.from('tasks').insert([{project_id,title,assigned_to: assigned_to_id,status: 'pending'}]);
+
+    if (error) return res.status(400).json({ error: "Could not assign task." });
+
+    res.json({ message: "Task assigned to member.", data });
 });
+
 
 export default router;

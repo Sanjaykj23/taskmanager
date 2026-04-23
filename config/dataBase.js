@@ -1,22 +1,9 @@
-import { Pool } from "pg";
+import {createClient} from "@supabase/supabase-js";
 import dotenv from "dotenv";
 
 dotenv.config();
+const supabaseUrl = process.env.SUPERBASE_URL;
+const supabaseKey = process.env.SUPERBASE_ANON_KEY;
+const superBase=createClient(supabaseUrl,supabaseKey);
 
-const db=new Pool({
-    host:process.env.DB_HOST,
-    user:process.env.DB_USER,
-    port:process.env.DB_PORT,
-    password:process.env.DB_PASSWORD,
-    database:process.env.DB_NAME
-});
-
-db.on("connect",()=>{
-    console.log("Connected to the database");
-});
-
-db.on("error",(err)=>{
-    console.error("Dtabase Error : ",err);
-});
-
-export default db;
+export default superBase;
