@@ -1,5 +1,5 @@
 import superbase from "../config/dataBase.js";
-
+import { getAllProjects, getMyTasks, updateTaskStatus,getProjectMemberStats } from "../services/projectServices.js"
 // 1. Create a new Project (Admin Only)
 export const createProject = async (req, res) => {
     const { project_name, project_desc, leadID } = req.body;
@@ -133,4 +133,49 @@ export const assignTask = async (req, res) => {
     if (error) return res.status(403).json({ error: "Task assignment failed. You may not have permission." });
 
     res.status(201).json({ message: "Task assigned to member.", data });
+};
+
+// For Admins/Leads: Get everything
+export const fetchDashboardData = async (req, res) => {
+    const { data, error } = await getAllProjects();
+    if (error) return res.status(400).json({ error: error.message });
+    res.status(200).json(data);
+};
+
+// For Users: Get assigned tasks
+export const fetchUserTasks = async (req, res) => {
+    const { data, error } = await getMyTasks(req.userData.id);
+    if (error) return res.status(400).json({ error: error.message });
+    res.status(200).json(data);
+};
+
+// For Users: Mark task as completed
+export const completeTask = async (req, res) => {
+    const { taskId, status } = req.body; // status should be 'completed'
+    const { data, error } = await updateTaskStatus(taskId, req.userData.id, status);
+    
+    if (error || data.length === 0) {
+        return res.status(400).json({ error: "Could not update task. Ensure it is assigned to you." });
+    }
+    res.status(200).json({ message: "Task updated successfully", data });
+};
+
+
+export const viewProjectMembers = async (req, res) => {
+    const { projectId } = req.params;
+
+    try {
+        const memberStats = await getProjectMemberStats(projectId);
+        
+        if (!memberStats || memberStats.length === 0) {
+            return res.status(404).json({ message: "No members found for this project." });
+        }
+
+        res.status(200).json({
+            project_id: projectId,
+            members: memberStats
+        });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch members", details: err.message });
+    }
 };
